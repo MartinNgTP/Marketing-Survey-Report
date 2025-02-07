@@ -1,0 +1,247 @@
+---
+title: "Marketing Survey and Dynamic Application:  Training Material"
+author: "Martin Ng"
+output: 
+  html_document:
+    self_contained: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{r seed}
+set.seed(41)
+```
+
+```{r libraries}
+library(data.table)
+library(DT)
+```
+
+```{r constants}
+
+```
+
+```{r functions}
+round.numerics <- function(x, digits){
+  if(is.numeric(x)){
+    x <- round(x = x, digits = digits)
+  }
+  return(x)
+}
+```
+
+```{r load_data}
+dat <- fread("../data/mobilephonesurveydata.csv", verbose = F)
+```
+
+```{r explore_data, eval = FALSE}
+
+```
+
+
+```{r clean_data}
+
+```
+
+
+
+## Introduction {.tabset}
+
+This is the training material for generating both static and dynamic reports for telecommunications company X based on their mobile phone survey data. This material is intended to highlight some of the most challenging parts of understanding and utilizing the data.
+
+**Static Report**:
+
+* A reporting template (.Rmd file) that is programmed to calculate the answers to the questions provided. The idea is to give marketing and product managers the useful information they need to act on the specific questions they posed.
+
+**Dynamic Report**:
+
+* A reporting template (.Rmd file) that is programmed to allow a user to select many different outcomes or subgroups to explore. In this portion, we will construct a dynamic reporting engine as a shiny application in R. The sections of the reporting engine should include user interfaces and reactive content for the scenarios presented in the Static Report.
+
+### Folder Structure
+
+Files needed for generating report include:
+
+* Survey data "mobile phone survey data.csv"
+* Constants "constants.csv"
+* Functions "functions.csv"
+
+These reports should be designed to be used by others on their own machine. To simplify that process, please keep the files in a folder structure:
+
+* The Project's Folder (named according to your preference)
+  * Data
+  * Reports: The Rmarkdown files should be within the Reports subfolder.  
+
+They should read the data from the Data folder using relative directories:
+```{r, eval = FALSE, echo = TRUE }
+# Read in data
+dat <- fread(input = "../Data/mobile phone survey data.csv", verbose = F)
+
+# Read in constants and functions
+source("../constants.R")
+source("../functions.R")
+```
+
+
+Example project folder:
+```{r, echo = FALSE}
+# Function to print folder structure with indentation
+print_folder_structure <- function(path = "..", indent = 0) {
+  items <- list.files(path = path, full.names = TRUE)
+  for (item in items) {
+    cat(strrep("│   ", indent), basename(item), "\n", sep = "")
+    if (dir.exists(item)) {
+      print_folder_structure(item, indent + 1)
+    }
+  }
+}
+
+print_folder_structure()
+```
+
+
+### Static Report {.tabset}
+Since the reports are to be directed to marketing and product managers throughout the client’s company, we want to present the information clearly for easier interpretation.
+
+Results are plotted as graphs, but if clients require tables, simply remove the # before the print data table codes in the Rmd.
+```{r, eval = FALSE, echo = TRUE}
+result_a <- plot_top_products(data = dat, metric = "awareness", region = "Northeast", top_n = top)
+result_a$plot
+#result_a$table
+```
+
+#### Q1. Respondent Variables
+For easier reading, percentages of **age group** and **income group** should be ordered by **ascending order of age group or income group**, while percentages of **other** respondent variables should be arranged in **descending order of percentages**.
+```{r, eval = FALSE, echo = TRUE}
+# In function plot_respondents_distribution()
+if (group_var %in% c(region.name, persona.name, gender.name)) {
+  counts <- counts[order(-Percentage)]  # Order by Percentage in descending order
+} else {
+  counts <- counts[order(get(group_var))]  # Order by group_var for other cases
+}
+```
+
+#### Q3. Overall Brand Perceptions
+Calculating overall brand perception can be tricky. Some of the perceptions are for positive traits, and others are for negative traits. The brand with the best overall perception would have the highest scores for the positive traits and the lowest scores for the negative traits. 
+
+Example code in calculate_brand_perception(): 
+```{r, eval = FALSE, echo = TRUE}
+# Calculate the average score for each positive and negative trait by product
+positive_scores <- filtered_data[, lapply(.SD, mean, na.rm = TRUE), by = Product, .SDcols = positive_traits]
+negative_scores <- filtered_data[, lapply(.SD, function(x) 10 - mean(x, na.rm = TRUE)), by = Product, .SDcols = negative_traits]
+  
+# Combine the positive and negative scores into a single table
+combined_scores <- merge(positive_scores, negative_scores, by = "Product")
+  
+# Calculate the overall average perception for each product
+combined_scores[, Overall_Perception := rowMeans(.SD, na.rm = TRUE), .SDcols = c(positive_traits, negative_traits)]
+```
+
+
+#### Q5. Aggregated Engagement
+
+1. When displaying regression results, order by p-value so user views the significant results first. 
+```{r, eval = FALSE, echo = TRUE}
+model_summary_table <- awareness_result %>%
+    select(Variable, Odds.Ratio, OR.Lower.95, OR.Upper.95, `Pr(>|z|)`) %>%
+    arrange(`Pr(>|z|)`)
+```
+
+2. Presentation: Highlight significant variables in data table and chart.
+
+Data table:
+```{r, eval = FALSE, echo = TRUE}
+datatable(model_summary_table, rownames = FALSE, options = list(dom = 't', pageLength = -1)) %>%
+    formatStyle(
+        columns = c("Odds.Ratio", "Pr(>|z|)"), # Columns to highlight
+        backgroundColor = styleInterval(
+            c(0.05), # Set the threshold for p-value
+            c("lightyellow", "white") # Colors for significance
+        )
+    )
+```
+
+Chart:
+```{r, eval = FALSE, echo = TRUE}
+ggplot(awareness_result, aes(x = reorder(Variable, Odds.Ratio), y = Odds.Ratio, color = Significance)) +
+    geom_point() +
+    geom_errorbar(aes(ymin = OR.Lower.95, ymax = OR.Upper.95), width = 0.2) +
+    geom_hline(yintercept = 1, linetype = "dashed", color = "red") + # Reference line at Odds Ratio = 1
+    coord_flip() +
+    labs(title = "Impact of Awareness and Other Factors on Buzzdial Awareness",
+         x = "Variables",
+         y = "Odds Ratio",
+         caption = "Note: Odds Ratio > 1 indicates a positive effect, < 1 indicates a negative effect. Aggregated awareness reflects cross-product engagement.") +
+    theme_minimal() +
+    scale_color_manual(values = c("Significant" = "red", "Not Significant" = "black"))
+```
+
+
+#### Dynamicity
+Although this is not a dynamic report, it should be set up dynamically to allow user to alter constants for different results.
+
+1. Constants
+
+Most of the questions ask for top 5, so save top as 5. If user wants to see top 10, he can simply change top to 10 instead of doing it in every question. (Also, store this constant directly on the static report Rmd for easier manipulation)
+```{r, eval = FALSE, echo = TRUE}
+top  = 5 
+```
+
+2. Texts outside the code chunk and chart titles
+
+Texts outside the code chunk and chart titles describe the data displayed, e.g. "Top N products". N should be dynamically set as the constant. Example:
+```{r, eval = FALSE, echo = TRUE}
+# Text outside code chunk
+What are the top `r top` products by Awareness rates in the Northeast?
+  
+# Chart Title
+labs(title = paste("Top", top, "Brands by overall average perception")
+```
+
+
+3. Interpretation
+
+While results are dynamically calculated and displayed, interpretation is not. For interpretation of regression model in Q5, remember to edit it yourself.
+
+
+
+### Dynamic Report
+
+#### Presentation
+Most of the tabs in the report display a bar chart. Texts (names of bars) and percentages need to be position dynamically on top or under the bars. Example:
+```{r, eval = FALSE, echo = TRUE}
+# Text
+text(x = -0.4 + 1.02*1:rates[, .N], y = -15, labels = rates[, get(product.name)], srt = 45, adj = 1, xpd = TRUE, pos = 2)
+
+# Percentage
+if(input$respondent_show_percentages == TRUE){
+  space_val = 0
+  text(x = -0.4 + 1:length(tab) * (1+space_val), y = tab, labels = sprintf("%.1f%%", tab), pos = 3)
+}
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
